@@ -15,12 +15,14 @@ export var multiboot align(4) linksection(".multiboot") = MultibootHeader{
 };
 
 const std = @import("std");
-const vga = @import("vga.zig");
+const serial = @import("serial.zig");
 
 pub const std_options = .{
     .log_level = .info,
     .logFn = logFn,
 };
+
+var output_serial_port: ?serial.SerialPort = null;
 
 pub fn logFn(
     comptime level: std.log.Level,
@@ -30,13 +32,17 @@ pub fn logFn(
 ) void {
     const scope_prefix = "(" ++ @tagName(scope) ++ "): ";
     const prefix = "[" ++ comptime level.asText() ++ "] " ++ scope_prefix;
-    std.fmt.format(vga.writer, prefix ++ format ++ "\n", args) catch unreachable;
+    const port = output_serial_port orelse return;
+    std.fmt.format(port.writer(), prefix ++ format ++ "\n", args) catch unreachable;
 }
 
 const kernel_log = std.log.scoped(.kernel);
 
 export fn kmain(mb_magic: u32, mb_ptr: u32) callconv(.C) void {
-    vga.init();
+    const serial_port = serial.SerialPort.init(0x3F8) catch unreachable;
+    serial_port.writeChar('\n');
+    output_serial_port = serial_port;
+
     kernel_log.info("starting zig kernel", .{});
     kernel_log.info("multiboot: magic=0x{X:0>8}, ptr=0x{X:0>8}", .{ mb_magic, mb_ptr });
 }

@@ -63,11 +63,15 @@ pub fn build(b: *std.Build) void {
     // zig fmt: off
     const run_cmd_str = &[_][]const u8{
         "qemu-system-x86_64",
-        "-cdrom", iso_path,
-        "-debugcon", "stdio",
-        "-m", "128M",
+        "-nodefaults",
+        "-d", "cpu_reset", "-d", "int",
+        "-vga", "none",
         "-machine", "q35,accel=kvm:whpx:tcg",
-        "-no-reboot", "-no-shutdown"
+        "-m", "128M",
+        "-cdrom", iso_path,
+        "-serial", "stdio",
+        "-no-reboot", "-no-shutdown",
+        "-nographic"
     };
     // zig fmt: on
 
