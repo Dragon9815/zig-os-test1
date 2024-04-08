@@ -79,13 +79,15 @@ pub fn build(b: *std.Build) void {
 
     // zig fmt: off
     const listing_cmd_str = &[_][]const u8{
-        "objdump", "-d", "-S", kernel_path,
+        "objdump", "-d", "-S"
     };
     // zig fmt: on
     const listing_cmd = b.addSystemCommand(listing_cmd_str);
+    listing_cmd.addFileArg(.{ .path = kernel_path });
+    listing_cmd.step.dependOn(&kernel_install_step.step);
+
     const listing_output = listing_cmd.captureStdOut();
 
     const listing_step = b.step("listing", "Create kernel listing");
     listing_step.dependOn(&b.addInstallFileWithDir(listing_output, .prefix, "kernel.lst").step);
-    listing_step.dependOn(&listing_cmd.step);
 }
