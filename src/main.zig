@@ -28,16 +28,28 @@ export fn _start() callconv(.Naked) noreturn {
     while (true) {}
 }
 
-const VGA_WIDTH = 80;
-const VGA_HEIGHT = 25;
-const VGA_SIZE = VGA_WIDTH * VGA_HEIGHT;
-var buffer = @as([*]volatile u16, @ptrFromInt(0xB8000));
+const std = @import("std");
+const vga = @import("vga.zig");
+
+pub const std_options = .{
+    .log_level = .info,
+    .logFn = logFn,
+};
+
+pub fn logFn(
+    comptime level: std.log.Level,
+    comptime scope: @TypeOf(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const scope_prefix = "(" ++ @tagName(scope) ++ "): ";
+    const prefix = "[" ++ comptime level.asText() ++ "] " ++ scope_prefix;
+    std.fmt.format(vga.writer, prefix ++ format ++ "\n", args) catch unreachable;
+}
+
+const kernel_log = std.log.scoped(.kernel);
 
 export fn kmain() callconv(.C) void {
-    @memset(buffer[0..VGA_SIZE], (0x0700 | ' '));
-    buffer[0] = 0x0700 | 'H';
-    buffer[1] = 0x0700 | 'e';
-    buffer[2] = 0x0700 | 'l';
-    buffer[3] = 0x0700 | 'l';
-    buffer[4] = 0x0700 | 'o';
+    vga.init();
+    kernel_log.info("starting zig kernel", .{});
 }
