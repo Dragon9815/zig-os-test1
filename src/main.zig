@@ -14,20 +14,6 @@ export var multiboot align(4) linksection(".multiboot") = MultibootHeader{
     .checksum = -(MAGIC + FLAGS),
 };
 
-export var stack_bytes: [16 * 1024]u8 align(16) linksection(".bss") = undefined;
-export fn _start() callconv(.Naked) noreturn {
-    // todo initialize stack
-    asm volatile (
-        \\ movl %[stk], %esp
-        \\ movl %esp, %ebp
-        \\ call kmain
-        :
-        : [stk] "{ecx}" (@intFromPtr(&stack_bytes) + @sizeOf(@TypeOf(stack_bytes))),
-    );
-
-    while (true) {}
-}
-
 const std = @import("std");
 const vga = @import("vga.zig");
 
@@ -49,7 +35,8 @@ pub fn logFn(
 
 const kernel_log = std.log.scoped(.kernel);
 
-export fn kmain() callconv(.C) void {
+export fn kmain(mb_magic: u32, mb_ptr: u32) callconv(.C) void {
     vga.init();
     kernel_log.info("starting zig kernel", .{});
+    kernel_log.info("multiboot: magic=0x{X:0>8}, ptr=0x{X:0>8}", .{ mb_magic, mb_ptr });
 }
