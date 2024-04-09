@@ -16,6 +16,7 @@ export var multiboot align(4) linksection(".multiboot") = MultibootHeader{
 
 const std = @import("std");
 const serial = @import("serial.zig");
+const gdt = @import("gdt.zig");
 
 pub const std_options = .{
     .log_level = .info,
@@ -45,4 +46,7 @@ export fn kmain(mb_magic: u32, mb_ptr: u32) callconv(.C) void {
 
     kernel_log.info("starting zig kernel", .{});
     kernel_log.info("multiboot: magic=0x{X:0>8}, ptr=0x{X:0>8}", .{ mb_magic, mb_ptr });
+
+    gdt.init();
+    kernel_log.info("gdt initialized", .{});
 }
