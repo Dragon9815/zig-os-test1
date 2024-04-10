@@ -63,26 +63,53 @@ pub fn init() void {
 
     idtr.offset = @intFromPtr(&entries);
     instr.lidt(&idtr);
-
-    std.log.err("{any}", .{std.fmt.fmtSliceHexUpper(std.mem.asBytes(&entries[0]))});
 }
 
+const exception_log = std.log.scoped(.exception);
+
 const InterruptFrame = struct {
+    // manually pushed
+    ss: u32,
+    gs: u32,
+    fs: u32,
+    es: u32,
+    ds: u32,
+
+    // pusha
+    edi: u32,
+    esi: u32,
+    ebp: u32,
+    esp: u32,
+    ebx: u32,
+    edx: u32,
+    ecx: u32,
+    eax: u32,
+
+    // interrupt stack
     eip: u32,
     cs: u32,
     eflags: u32,
-    esp: u32,
-    ss: u32,
+
+    // is pushed sometimes, used for tasking stuff
+    esp0: u32,
+    ss0: u32,
+
+    fn dump(self: *const @This()) void {
+        exception_log.err("exception frame:", .{});
+        exception_log.err("  EAX={X:0>8} EBX={X:0>8} ECX={X:0>8} EDX={X:0>8}", .{ self.eax, self.ebx, self.ecx, self.edx });
+        exception_log.err("  ESI={X:0>8} EDI={X:0>8} EBP={X:0>8} ESP={X:0>8}", .{ self.esi, self.edi, self.ebp, self.esp });
+        exception_log.err("  EIP={X:0>8} EFLAGS={X:0>8}", .{ self.eip, self.eflags });
+        exception_log.err("  CS={X:0>4} DS={X:0>4} ES={X:0>4} FS={X:0>4} GS={X:0>4} SS={X:0>4}", .{ self.cs, self.ds, self.es, self.fs, self.gs, self.ss });
+    }
 };
 
-fn int0Handler(frame: *InterruptFrame) *InterruptFrame {
-    std.log.err("test", .{});
-    std.log.err("EIP: 0x{X:0>8}, CS: 0x{X:0>4}, EFLAGS: 0x{X:0>8}", .{ frame.eip, frame.cs, frame.eflags });
+fn int0Handler(frame: *InterruptFrame) callconv(.C) *InterruptFrame {
+    exception_log.err("division by zero at {X:0>4}:{X:0>8}", .{ frame.cs, frame.eip });
+    frame.dump();
     while (true) {}
-    return frame;
 }
 
-fn interruptStub(comptime handler: fn (*InterruptFrame) *InterruptFrame) InterruptHandler {
+fn interruptStub(comptime handler: fn (*InterruptFrame) callconv(.C) *InterruptFrame) InterruptHandler {
     return struct {
         fn func() callconv(.Naked) void {
             asm volatile (
@@ -93,6 +120,7 @@ fn interruptStub(comptime handler: fn (*InterruptFrame) *InterruptFrame) Interru
                 \\ push  %%es
                 \\ push  %%fs
                 \\ push  %%gs
+                \\ push  %%ss
                 \\
                 \\ mov   $0x10, %%ax
                 \\ mov   %%ax, %%ds
@@ -110,8 +138,9 @@ fn interruptStub(comptime handler: fn (*InterruptFrame) *InterruptFrame) Interru
             );
 
             asm volatile (
-                \\ add   $4, %%esp
+                \\ mov   %%eax, %%esp
                 \\
+                \\ pop   %%ss
                 \\ pop   %%gs
                 \\ pop   %%fs
                 \\ pop   %%es
