@@ -17,6 +17,7 @@ export var multiboot align(4) linksection(".multiboot") = MultibootHeader{
 const std = @import("std");
 const serial = @import("serial.zig");
 const gdt = @import("gdt.zig");
+const idt = @import("idt.zig");
 
 pub const std_options = .{
     .log_level = .info,
@@ -49,4 +50,19 @@ export fn kmain(mb_magic: u32, mb_ptr: u32) callconv(.C) void {
 
     gdt.init();
     kernel_log.info("gdt initialized", .{});
+
+    idt.init();
+    // asm volatile ("cli");
+
+    // const a: u32 = 3;
+    // var b: u32 = 5;
+    // b -= 3;
+    // b -= 2;
+    const c = asm volatile ("div %%ecx"
+        : [c] "={eax}" (-> u32),
+        : [a] "{eax}" (3),
+          [b] "{ecx}" (0),
+        : "eax"
+    );
+    kernel_log.info("c = {}", .{c});
 }

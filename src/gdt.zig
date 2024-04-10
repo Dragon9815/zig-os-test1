@@ -133,7 +133,7 @@ const null_flags = FlagBits{
 
 const num_entries = 5;
 
-pub const entries: [num_entries]GdtEntry = entries: {
+const entries: [num_entries]GdtEntry = entries: {
     var tmp_entries: [num_entries]GdtEntry = undefined;
     tmp_entries[0] = GdtEntry.init(0, 0, null_access, null_flags);
     tmp_entries[1] = GdtEntry.init(0, 0xFFFFF, kernel_code, pm32_flags);

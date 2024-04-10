@@ -62,7 +62,7 @@ pub fn build(b: *std.Build) void {
 
     // zig fmt: off
     const run_cmd_str = &[_][]const u8{
-        "qemu-system-x86_64",
+        "qemu-system-i386",
         "-nodefaults",
         "-d", "cpu_reset", "-d", "int",
         "-vga", "none",
@@ -82,8 +82,20 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     // zig fmt: off
+    const debug_cmd_str = run_cmd_str ++ &[_][]const u8{
+        "-s", "-S"
+    };
+    // zig fmt: on
+
+    const debug_cmd = b.addSystemCommand(debug_cmd_str);
+    debug_cmd.step.dependOn(b.getInstallStep());
+
+    const debug_step = b.step("debug", "Debug the kernel");
+    debug_step.dependOn(&debug_cmd.step);
+
+    // zig fmt: off
     const listing_cmd_str = &[_][]const u8{
-        "objdump", "-d", "-S"
+        "objdump", "-d", "-S", "-Mintel",
     };
     // zig fmt: on
     const listing_cmd = b.addSystemCommand(listing_cmd_str);

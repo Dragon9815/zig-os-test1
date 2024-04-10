@@ -1,4 +1,5 @@
 const gdt = @import("gdt.zig");
+const idt = @import("idt.zig");
 
 pub fn out8(address: u16, value: u8) void {
     asm volatile ("outb %al, %dx"
@@ -35,5 +36,12 @@ pub fn lgdt(gdtr: *gdt.GdtPtr) void {
     asm volatile (
         \\ljmp $0x08, $1f
         \\1:
+    );
+}
+
+pub fn lidt(idtr: *idt.IdtPtr) void {
+    asm volatile ("lidt (%%eax)"
+        :
+        : [gdtr] "{eax}" (idtr),
     );
 }
