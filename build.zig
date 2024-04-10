@@ -106,4 +106,19 @@ pub fn build(b: *std.Build) void {
 
     const listing_step = b.step("listing", "Create kernel listing");
     listing_step.dependOn(&b.addInstallFileWithDir(listing_output, .prefix, "kernel.lst").step);
+
+    // zig fmt: off
+    const map_cmd_str = &[_][]const u8{
+        "readelf", "-h", "-l", "-S", "-s", "--wide",
+    };
+    // zig fmt: on
+    const map_cmd = b.addSystemCommand(map_cmd_str);
+    map_cmd.addFileArg(.{ .path = kernel_path });
+    map_cmd.step.dependOn(&kernel_install_step.step);
+
+    const map_output = map_cmd.captureStdOut();
+    const map_install_step = b.addInstallFileWithDir(map_output, .prefix, "kernel.map");
+    b.default_step.dependOn(&map_install_step.step);
+    const map_step = b.step("map", "Create a file similar to a linker map");
+    map_step.dependOn(&map_install_step.step);
 }
