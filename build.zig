@@ -66,12 +66,13 @@ pub fn build(b: *std.Build) void {
         "-nodefaults",
         "-d", "cpu_reset", "-d", "int",
         "-vga", "none",
-        "-machine", "q35,accel=kvm:whpx:tcg",
+        "-machine", "q35", //"q35,accel=kvm:whpx:tcg", // this makes the -d option not work
         "-m", "128M",
         "-cdrom", iso_path,
         "-serial", "stdio",
         "-no-reboot", "-no-shutdown",
-        "-nographic"
+        "-nographic",
+        "-D", "qemu.log",
     };
     // zig fmt: on
 
