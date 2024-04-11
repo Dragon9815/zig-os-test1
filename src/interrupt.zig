@@ -1,46 +1,6 @@
 const std = @import("std");
 const idt = @import("idt.zig");
 
-const InterruptFrame = struct {
-    // manually pushed
-    ss: u32,
-    gs: u32,
-    fs: u32,
-    es: u32,
-    ds: u32,
-
-    // pusha
-    edi: u32,
-    esi: u32,
-    ebp: u32,
-    esp: u32,
-    ebx: u32,
-    edx: u32,
-    ecx: u32,
-    eax: u32,
-
-    // will be pushed by exceptions with error codes,
-    // the stub pushes a zero here so we can use a single structure
-    err_code: u32,
-
-    // interrupt stack
-    eip: u32,
-    cs: u32,
-    eflags: u32,
-
-    // is pushed sometimes, used for tasking stuff
-    esp0: u32,
-    ss0: u32,
-
-    fn dump(self: *const @This(), comptime logger: type) void {
-        logger.err("exception frame:", .{});
-        logger.err("  EAX={X:0>8} EBX={X:0>8} ECX={X:0>8} EDX={X:0>8}", .{ self.eax, self.ebx, self.ecx, self.edx });
-        logger.err("  ESI={X:0>8} EDI={X:0>8} EBP={X:0>8} ESP={X:0>8}", .{ self.esi, self.edi, self.ebp, self.esp });
-        logger.err("  EIP={X:0>8} EFLAGS={X:0>8}", .{ self.eip, self.eflags });
-        logger.err("  CS={X:0>4} DS={X:0>4} ES={X:0>4} FS={X:0>4} GS={X:0>4} SS={X:0>4}", .{ self.cs, self.ds, self.es, self.fs, self.gs, self.ss });
-    }
-};
-
 const IretRegisters = packed struct {
     eip: usize,
     cs: usize,
@@ -49,51 +9,150 @@ const IretRegisters = packed struct {
     // Only present if interrupt was rasied from another privilege level
     esp0: usize,
     ss0: usize,
+
+    fn dump(self: *const @This(), comptime logger: type) void {
+        logger.err("SS0: {X:0>8} ESP0: {X:0>8} EFLAGS: {X:0>8}", .{ self.ss0, self.esp0, self.eflags });
+        logger.err("CS:  {X:0>4}     EIP:  {X:0>8}", .{ self.cs, self.eip });
+    }
 };
 
 const ScratchRegisters = packed struct {
-    edx: u32,
-    ecx: u32,
-    eax: u32,
+    edx: usize,
+    ecx: usize,
+    eax: usize,
+
+    fn dump(self: *const @This(), comptime logger: type) void {
+        logger.err("EAX: {X:0>8} ECX:  {X:0>8} EDX: {X:0>8}", .{ self.eax, self.ecx, self.edx });
+    }
 };
 
-const PreservedRegister = packed struct {
-    edi: u32,
-    esi: u32,
-    ebp: u32,
-    esp: u32,
-    ebx: u32,
-};
-
-const exception_log = std.log.scoped(.exception);
-
-pub fn int0Handler(frame: *InterruptFrame) callconv(.C) *InterruptFrame {
-    exception_log.err("division by zero at {X:0>4}:{X:0>8}", .{ frame.cs, frame.eip });
-    frame.dump(std.log);
-    while (true) {}
+// eax is not pushed here, because it has special handling for some stubs
+inline fn pushScratchRegs() void {
+    asm volatile (
+        \\ push  %%ecx
+        \\ push  %%edx
+    );
 }
 
-pub fn isrStub(comptime handler: fn (*InterruptFrame) callconv(.C) *InterruptFrame) idt.InterruptHandler {
+inline fn popScratchRegs() void {
+    asm volatile (
+        \\ pop  %%edx
+        \\ pop  %%ecx
+        \\ pop  %%eax
+    );
+}
+
+const PreservedRegisters = packed struct {
+    edi: usize,
+    esi: usize,
+    ebp: usize,
+    ebx: usize,
+
+    fn dump(self: *const @This(), comptime logger: type) void {
+        logger.err("EBX: {X:0>8} EBP:  {X:0>8}", .{ self.ebx, self.ebp });
+        logger.err("ESI: {X:0>8} EDI:  {X:0>8}", .{ self.esi, self.edi });
+    }
+};
+
+inline fn pushPreservedRegs() void {
+    asm volatile (
+        \\ push  %%ebx
+        \\ push  %%ebp
+        \\ push  %%esi
+        \\ push  %%edi
+    );
+}
+
+inline fn popPreservedRegs() void {
+    asm volatile (
+        \\ pop  %%edi
+        \\ pop  %%esi
+        \\ pop  %%ebp
+        \\ pop  %%ebx
+    );
+}
+
+const SegmentRegisters = packed struct {
+    gs: usize,
+    fs: usize,
+    es: usize,
+    ds: usize,
+
+    fn dump(self: *const @This(), comptime logger: type) void {
+        logger.err("DS: {X:0>4}  ES: {X:0>4}  FS: {X:0>4}  GS: {X:0>4}", .{ self.ds, self.es, self.fs, self.gs });
+    }
+};
+
+inline fn pushSegments() void {
+    asm volatile (
+        \\ push  %%ds
+        \\ push  %%es
+        \\ push  %%fs
+        \\ push  %%gs
+    );
+}
+
+inline fn popSegments() void {
+    asm volatile (
+        \\ pop  %%gs
+        \\ pop  %%fs
+        \\ pop  %%es
+        \\ pop  %%ds
+    );
+}
+
+pub const Frame = packed struct {
+    segments: SegmentRegisters,
+    preserved: PreservedRegisters,
+    scratch: ScratchRegisters,
+    iret: IretRegisters,
+
+    pub fn dump(self: *const @This(), comptime logger: type) void {
+        self.iret.dump(logger);
+        self.scratch.dump(logger);
+        self.preserved.dump(logger);
+        self.segments.dump(logger);
+    }
+};
+
+pub const ErrorFrame = packed struct {
+    error_code: usize,
+    iframe: Frame,
+
+    pub fn dump(self: *const @This(), comptime logger: type) void {
+        logger.err("ERROR_CODE: {X:0>8}", .{self.error_code});
+        self.iframe.dump(logger);
+    }
+};
+
+const Handler = fn (*Frame) callconv(.C) *Frame;
+const ErrorHandler = fn (*ErrorFrame) callconv(.C) *ErrorFrame;
+
+pub fn isrStub(comptime handler: Handler) idt.InterruptHandler {
     return struct {
         fn func() callconv(.Naked) void {
             asm volatile (
-                \\ cli 
-                \\
-                \\ pushl $0 // push dummy 0 err code
-                \\
-                \\ pusha
-                \\ push  %%ds
-                \\ push  %%es
-                \\ push  %%fs
-                \\ push  %%gs
-                \\ push  %%ss
-                \\
+                \\ cli
+            );
+
+            asm volatile (
+                \\ push  %%eax
+            );
+
+            pushScratchRegs();
+            pushPreservedRegs();
+            pushSegments();
+
+            // TODO: is this actually needed, do these ever get changed?
+            asm volatile (
                 \\ mov   $0x10, %%ax
                 \\ mov   %%ax, %%ds
                 \\ mov   %%ax, %%es
                 \\ mov   %%ax, %%fs
                 \\ mov   %%ax, %%gs
-                \\
+            );
+
+            asm volatile (
                 \\ mov   %%esp, %%eax
                 \\ push  %%eax
             );
@@ -103,15 +162,68 @@ pub fn isrStub(comptime handler: fn (*InterruptFrame) callconv(.C) *InterruptFra
                 : [handler] "{ebx}" (&handler),
             );
 
+            asm volatile ("mov   %%eax, %%esp");
+
+            popSegments();
+            popPreservedRegs();
+            popScratchRegs();
+
             asm volatile (
+                \\ iret
+            );
+        }
+    }.func;
+}
+
+pub fn isrErrorStub(comptime handler: ErrorHandler) idt.InterruptHandler {
+    return struct {
+        fn func() callconv(.Naked) void {
+            asm volatile (
+                \\ cli
+            );
+
+            asm volatile (
+                \\ xchg %%eax, (%%esp)
+            );
+
+            pushScratchRegs();
+            pushPreservedRegs();
+            pushSegments();
+
+            asm volatile (
+                \\ push %%eax
+            );
+
+            // TODO: is this actually needed, do these ever get changed?
+            asm volatile (
+                \\ mov   $0x10, %%ax
+                \\ mov   %%ax, %%ds
+                \\ mov   %%ax, %%es
+                \\ mov   %%ax, %%fs
+                \\ mov   %%ax, %%gs
+            );
+
+            asm volatile (
+                \\ mov   %%esp, %%eax
+                \\ push  %%eax
+            );
+
+            asm volatile (
+                \\ call  *%%ebx
+                :
+                : [handler] "{ebx}" (&handler),
+            );
+
+            asm volatile (
+                \\ add   4, %%esp
                 \\ mov   %%eax, %%esp
-                \\
-                \\ pop   %%ss
-                \\ pop   %%gs
-                \\ pop   %%fs
-                \\ pop   %%es
-                \\ pop   %%ds
-                \\ popa
+            );
+
+            popSegments();
+            popPreservedRegs();
+            popScratchRegs();
+
+            asm volatile (
                 \\ iret
             );
         }
