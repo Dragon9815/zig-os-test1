@@ -18,6 +18,7 @@ const std = @import("std");
 const serial = @import("serial.zig");
 const gdt = @import("gdt.zig");
 const idt = @import("idt.zig");
+const interrupt = @import("interrupt.zig");
 
 pub const std_options = .{
     .log_level = .info,
@@ -52,12 +53,9 @@ export fn kmain(mb_magic: u32, mb_ptr: u32) callconv(.C) void {
     kernel_log.info("gdt initialized", .{});
 
     idt.init();
-    // asm volatile ("cli");
 
-    // const a: u32 = 3;
-    // var b: u32 = 5;
-    // b -= 3;
-    // b -= 2;
+    idt.setInterruptGate(0, &interrupt.isrStub(interrupt.int0Handler));
+
     const c = asm volatile ("div %%ecx"
         : [c] "={eax}" (-> u32),
         : [a] "{eax}" (3),
