@@ -11,8 +11,8 @@ const IretRegisters = packed struct {
     ss0: usize,
 
     fn dump(self: *const @This(), comptime logger: type) void {
-        logger.err("SS0: {X:0>8} ESP0: {X:0>8} EFLAGS: {X:0>8}", .{ self.ss0, self.esp0, self.eflags });
-        logger.err("CS:  {X:0>4}     EIP:  {X:0>8}", .{ self.cs, self.eip });
+        logger.debug("SS0: {X:0>8} ESP0: {X:0>8} EFLAGS: {X:0>8}", .{ self.ss0, self.esp0, self.eflags });
+        logger.debug("CS:  {X:0>4}     EIP:  {X:0>8}", .{ self.cs, self.eip });
     }
 };
 
@@ -22,7 +22,7 @@ const ScratchRegisters = packed struct {
     eax: usize,
 
     fn dump(self: *const @This(), comptime logger: type) void {
-        logger.err("EAX: {X:0>8} ECX:  {X:0>8} EDX: {X:0>8}", .{ self.eax, self.ecx, self.edx });
+        logger.debug("EAX: {X:0>8} ECX:  {X:0>8} EDX: {X:0>8}", .{ self.eax, self.ecx, self.edx });
     }
 };
 
@@ -49,8 +49,8 @@ const PreservedRegisters = packed struct {
     ebx: usize,
 
     fn dump(self: *const @This(), comptime logger: type) void {
-        logger.err("EBX: {X:0>8} EBP:  {X:0>8}", .{ self.ebx, self.ebp });
-        logger.err("ESI: {X:0>8} EDI:  {X:0>8}", .{ self.esi, self.edi });
+        logger.debug("EBX: {X:0>8} EBP:  {X:0>8}", .{ self.ebx, self.ebp });
+        logger.debug("ESI: {X:0>8} EDI:  {X:0>8}", .{ self.esi, self.edi });
     }
 };
 
@@ -79,7 +79,7 @@ const SegmentRegisters = packed struct {
     ds: usize,
 
     fn dump(self: *const @This(), comptime logger: type) void {
-        logger.err("DS: {X:0>4}  ES: {X:0>4}  FS: {X:0>4}  GS: {X:0>4}", .{ self.ds, self.es, self.fs, self.gs });
+        logger.debug("DS: {X:0>4}  ES: {X:0>4}  FS: {X:0>4}  GS: {X:0>4}", .{ self.ds, self.es, self.fs, self.gs });
     }
 };
 
@@ -120,13 +120,17 @@ pub const ErrorFrame = packed struct {
     iframe: Frame,
 
     pub fn dump(self: *const @This(), comptime logger: type) void {
-        logger.err("ERROR_CODE: {X:0>8}", .{self.error_code});
+        logger.debug("ERROR_CODE: {X:0>8}", .{self.error_code});
         self.iframe.dump(logger);
     }
 };
 
+/// Handler type for interrupts without an error code
 const Handler = fn (*Frame) callconv(.C) *Frame;
+/// Handler type for interrupts with an error code
 const ErrorHandler = fn (*ErrorFrame) callconv(.C) *ErrorFrame;
+/// Handler type for the default handler, this handler is used for all interrupt handlers that are not set up
+const DefaultHandler = fn (i32, *Frame) callconv(.C) *Frame;
 
 pub fn isrStub(comptime handler: Handler) idt.InterruptHandler {
     return struct {
@@ -218,6 +222,60 @@ pub fn isrErrorStub(comptime handler: ErrorHandler) idt.InterruptHandler {
                 \\ add   4, %%esp
                 \\ mov   %%eax, %%esp
             );
+
+            popSegments();
+            popPreservedRegs();
+            popScratchRegs();
+
+            asm volatile (
+                \\ iret
+            );
+        }
+    }.func;
+}
+
+pub fn isrUnhandledStub(comptime idx: comptime_int, comptime handler: DefaultHandler) idt.InterruptHandler {
+    return struct {
+        fn func() callconv(.Naked) void {
+            asm volatile (
+                \\ cli
+            );
+
+            asm volatile (
+                \\ push  %%eax
+            );
+
+            pushScratchRegs();
+            pushPreservedRegs();
+            pushSegments();
+
+            // TODO: is this actually needed, do these ever get changed?
+            asm volatile (
+                \\ mov   $0x10, %%ax
+                \\ mov   %%ax, %%ds
+                \\ mov   %%ax, %%es
+                \\ mov   %%ax, %%fs
+                \\ mov   %%ax, %%gs
+            );
+
+            asm volatile (
+                \\ mov   %%esp, %%eax
+                \\ push  %%eax
+            );
+
+            asm volatile (
+                \\ push %%eax
+                :
+                : [idx] "{eax}" (idx),
+            );
+
+            asm volatile (
+                \\ call *%%ebx
+                :
+                : [handler] "{ebx}" (&handler),
+            );
+
+            asm volatile ("mov   %%eax, %%esp");
 
             popSegments();
             popPreservedRegs();

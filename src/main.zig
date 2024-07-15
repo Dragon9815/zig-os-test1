@@ -20,9 +20,10 @@ const gdt = @import("gdt.zig");
 const idt = @import("idt.zig");
 const interrupt = @import("interrupt.zig");
 const exceptions = @import("exceptions.zig");
+const frame_alloc = @import("alloc/frame.zig");
 
 pub const std_options = .{
-    .log_level = .info,
+    .log_level = .debug,
     .logFn = logFn,
 };
 
@@ -42,6 +43,26 @@ pub fn logFn(
 
 const kernel_log = std.log.scoped(.kernel);
 
+fn default_isr(idx: i32, frame: *interrupt.Frame) callconv(.C) *interrupt.Frame {
+    kernel_log.warn("unhandled isr #{} at {X:0>4}:{X:0>8}", .{ idx, frame.iret.cs, frame.iret.eip });
+    frame.dump(kernel_log);
+    return frame;
+}
+
+const default_isr_handlers: [idt.num_entries - 32]*const idt.InterruptHandler = handlers: {
+    var tmp_handlers: [idt.num_entries - 32]*const idt.InterruptHandler = undefined;
+    for (32..idt.num_entries) |i| {
+        tmp_handlers[i - 32] = interrupt.isrUnhandledStub(i, default_isr);
+    }
+    break :handlers tmp_handlers;
+};
+
+fn install_default_isr() void {
+    for (32..idt.num_entries) |i| {
+        idt.setInterruptGate(@intCast(i), default_isr_handlers[i - 32]);
+    }
+}
+
 export fn kmain(mb_magic: u32, mb_ptr: u32) callconv(.C) void {
     const serial_port = serial.SerialPort.init(0x3F8) catch unreachable;
     serial_port.writeChar('\n');
@@ -50,20 +71,15 @@ export fn kmain(mb_magic: u32, mb_ptr: u32) callconv(.C) void {
     kernel_log.info("starting zig kernel", .{});
     kernel_log.info("multiboot: magic=0x{X:0>8}, ptr=0x{X:0>8}", .{ mb_magic, mb_ptr });
 
+    kernel_log.info("initializing gdt...", .{});
     gdt.init();
-    kernel_log.info("gdt initialized", .{});
 
+    kernel_log.info("initializing idt...", .{});
     idt.init();
+
+    kernel_log.info("initializing exception isrs...", .{});
     exceptions.init();
 
-    // const c = asm volatile ("div %%ecx"
-    //     : [c] "={eax}" (-> u32),
-    //     : [a] "{eax}" (3),
-    //       [b] "{ecx}" (0),
-    //     : "eax"
-    // );
-    // kernel_log.info("c = {}", .{c});
-    asm volatile (
-        \\ int $0x80
-    );
+    kernel_log.info("initializing unhandled isrs...", .{});
+    install_default_isr();
 }

@@ -47,7 +47,7 @@ pub const IdtPtr = packed struct {
 
 pub const InterruptHandler = fn () callconv(.Naked) void;
 
-const num_entries = 256;
+pub const num_entries = 256;
 var entries: [num_entries]IdtEntry = [_]IdtEntry{IdtEntry.initZero()} ** num_entries;
 var idtr = IdtPtr{
     .size = num_entries * @sizeOf(IdtEntry) - 1,
