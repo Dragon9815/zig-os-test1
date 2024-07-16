@@ -46,8 +46,10 @@ fn debug_trap(frame: *interrupt.Frame) callconv(.C) *interrupt.Frame {
 }
 
 fn breakpoint_trap(frame: *interrupt.Frame) callconv(.C) *interrupt.Frame {
-    exception_log.err("breakpoint trap at {X:0>4}:{X:0>8}", .{ frame.iret.cs, frame.iret.eip });
+    // eip actually points at the next instruction and int3 is 1 byte long
+    exception_log.err("breakpoint trap at {X:0>4}:{X:0>8}", .{ frame.iret.cs, frame.iret.eip - 1 });
     frame.dump(exception_log);
+    while (true) {}
     return frame;
 }
 
